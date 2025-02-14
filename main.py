@@ -41,12 +41,17 @@ def connect():
         sys.exit()
         
 
-def update(inputs):
+def updateCloud(inputs):
     #publish feeds
     client.publish(speed_feed,    
                   bytes(str(speed), 'utf-8'),   # Publishing Temprature to adafruit.io
                   qos=0)
     print("sent")
+
+
+
+def updateLcd():
+    pass
 
 
 if __name__ == '__main__':
@@ -67,7 +72,7 @@ if __name__ == '__main__':
     speed_feed = bytes('{:s}/feeds/{:s}'.format(userid, SPEED_FEED_ID), 'utf-8')
     
     publishSpeedTimer = Timer()
-    publishSpeedTimer.init(period=5000, mode=Timer.PERIODIC, callback = update)
+    publishSpeedTimer.init(period=10000, mode=Timer.PERIODIC, callback = updateCloud)
         
     
     while True:
