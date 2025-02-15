@@ -3,6 +3,7 @@ from umqtt.robust import MQTTClient
 from machine import Pin, Timer, ADC, I2C
 from customLCD import display
 from _thread import allocate_lock, start_new_thread
+from time import sleep
 
 import machine
 import network
@@ -70,22 +71,16 @@ def connect():
         sys.exit()
         
 
-def updateCloud(inputs):
-    global speed
+def updateCloud(speed):
     #publish feeds
     client.publish(speed_feed,    
                   bytes(str(speed), 'utf-8'),   # Publishing Temprature to adafruit.io
                   qos=0)
-    print("sent")
-    speed += 1
+    print("sent", speed)
 
 
 def cb(topic, msg):                             # Callback function
     print('Received Data:  Topic = {}, Msg = {}'.format(topic, msg))
-    
-
-def updateLcd():
-    pass
 
 def secs():
     return time.ticks_ms() / 1000
@@ -93,6 +88,11 @@ def secs():
     
 def trunc(N, ndigits=0):
     return math.trunc(N * 10 ** ndigits) / 10 ** ndigits
+
+
+def timer():
+    print("nope")
+    raise Exception
 
 
 ###############
@@ -148,7 +148,118 @@ class stopwatch:
 ## STOPWATCH END ##
 ###################
 
+##############
+## ODOMETER ##
+##############
+            
+class odometer:
+    def __init__(self, WHEEL, lock, client):
+        self.m = 0.0
+        self.WHEEL = WHEEL
+        self.timeB = 0.0
+        self.timeA = secs()
+        self.speed = 0
+        self.avg = 0
+        self.display = display(20, 4)
+        self.timer = stopwatch()
+        self.lock = lock
+        start_new_thread(core1, (self, self.lock, client, ))
+    
+    
+    def checkspeed(self):
+        time = secs() - self.timeA
+        return self.WHEEL / time
+    
+    
+    def add(self):
+        self.lock.acquire()
+        self.timer.start()
+        
+        self.timeB = secs()
+        time = self.timeB - self.timeA
+        self.timeA = secs()
+        
+        self.m += self.WHEEL
+        self.m = round(self.m, 2)
+        self.speed = self.WHEEL / time
+        if self.timer.get_time() > 0:
+            self.avg = self.m / self.timer.get_time() * 3.6
+        self.speed = round(self.speed * 3.6, 1)
+        self.lock.release()
+        
+    def update_lcd(self):
+        lock.acquire()
+        
+        if self.timer.get_time() > 0:
+            self.avg = self.m / self.timer.get_time() * 3.6
+            
+        displayBuffer = [round(self.m),
+                        [self.timer.get_mins(), self.timer.get_secs()],
+                        self.speed,
+                        round(self.avg, 1)]
+        
+        updateCloud(self.speed)
+        lock.release()
+        return displayBuffer
+    
+    
+    def reset(self):
+        self.m = 0
 
+
+def core1(self, lock, client):
+    global displayBuffer
+    
+    adc = ADC(4)
+    display = self.display
+    
+    while True:
+
+        buffer = self.update_lcd()
+        
+        adc_v = adc.read_u16() * (3.3 / 65536)
+        temp = 29 - (adc_v - 0.706) / 0.001721
+        
+        m = buffer[0]
+        time = buffer[1]
+        speed = buffer[2]
+        avg = buffer[3]
+        print(buffer, sensor.value(), temp)
+        
+        display.resetBuffer() #reset the lcd buffer
+        display.putWithEnding(m, ending="m")  #display the meters
+        display.putWithEnding(str(time[0]) + ":" + str(time[1]), ending="s")  #display the time
+        display.putWithEnding(speed, ending="km/h")  #display the speed
+        display.putWithEnding(avg, prefix="avg:")  #display the average speed
+        display.putBuffer() #display the buffer
+        
+        sleep(2)
+        
+
+def core0():
+    global client
+    odo = odometer(1.6, lock, client)
+    t = stopwatch()
+    while True:
+        if not sensor.value():
+            odo.add()
+            t.reset()
+            t.start()
+            while not sensor.value():
+                time.sleep_ms(30)
+        time.sleep_ms(1)
+        
+        try:
+            client.check_msg()                  # non blocking function
+        except :
+            client.disconnect()
+            sys.exit()
+
+        
+
+##################
+## ODOMETER END ##
+##################
 
 if __name__ == '__main__':
     connect()
@@ -164,21 +275,21 @@ if __name__ == '__main__':
     except Exception as e:
         print('could not connect to MQTT server {}{}'.format(type(e).__name__, e))
         sys.exit()
-        
+    
+    
     speed_feed = bytes('{:s}/feeds/{:s}'.format(userid, SPEED_FEED_ID), 'utf-8')
     
     throttle   = bytes('{:s}/throttle'.format(userid), 'utf-8')
     
     client.set_callback(cb)      # Callback function               
     client.subscribe(throttle) # Subscribing to particular topic
-    
-    publishSpeedTimer = Timer()
-    publishSpeedTimer.init(period=2500, mode=Timer.PERIODIC, callback = updateCloud)
+    #publishSpeedTimer = Timer()
+    #publishSpeedTimer.init(period=2500, mode=Timer.PERIODIC, callback = updateCloud)
         
+    try:
+        print("g")
+        core0()
+    except KeyboardInterrupt:
+        #print(e)
+        machine.reset()
     
-    while True:
-        try:
-            client.check_msg()                  # non blocking function
-        except :
-            client.disconnect()
-            sys.exit()
