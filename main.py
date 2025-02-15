@@ -8,6 +8,9 @@ import _thread
 from secrets import passwd, ssid, userid, key
 
 speed = 0
+distance = 0
+TSS = 0
+
 
 led = Pin("LED", Pin.OUT)
 
@@ -42,13 +45,18 @@ def connect():
         
 
 def updateCloud(inputs):
+    global speed
     #publish feeds
     client.publish(speed_feed,    
                   bytes(str(speed), 'utf-8'),   # Publishing Temprature to adafruit.io
                   qos=0)
     print("sent")
+    speed += 1
 
 
+def cb(topic, msg):                             # Callback function
+    print('Received Data:  Topic = {}, Msg = {}'.format(topic, msg))
+    
 
 def updateLcd():
     pass
@@ -71,8 +79,13 @@ if __name__ == '__main__':
         
     speed_feed = bytes('{:s}/feeds/{:s}'.format(userid, SPEED_FEED_ID), 'utf-8')
     
+    throttle   = bytes('{:s}/throttle'.format(userid), 'utf-8')
+    
+    client.set_callback(cb)      # Callback function               
+    client.subscribe(throttle) # Subscribing to particular topic
+    
     publishSpeedTimer = Timer()
-    publishSpeedTimer.init(period=10000, mode=Timer.PERIODIC, callback = updateCloud)
+    publishSpeedTimer.init(period=2500, mode=Timer.PERIODIC, callback = updateCloud)
         
     
     while True:
