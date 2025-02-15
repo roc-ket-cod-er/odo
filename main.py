@@ -1,18 +1,35 @@
-from machine import Pin, Timer, ADC
+from secrets import passwd, ssid, userid, key
+from umqtt.robust import MQTTClient
+from machine import Pin, Timer, ADC, I2C
+from customLCD import display
+from _thread import allocate_lock, start_new_thread
+
+import machine
 import network
 import time
-from umqtt.robust import MQTTClient
+import math
 import sys
 import dht
-import _thread
-from secrets import passwd, ssid, userid, key
+import random
+
+
+lock = allocate_lock()
+
+sensor = Pin(18, Pin.IN, Pin.PULL_UP)
+run = Pin(19, Pin.IN, Pin.PULL_UP)
+led = Pin("LED", Pin.OUT)
+
+if run.value():
+    sys.exit()
+
+while not sensor.value():
+    time.sleep(0.1)
+
 
 speed = 0
 distance = 0
 TSS = 0
 
-
-led = Pin("LED", Pin.OUT)
 
 WIFI_SSID       = ssid
 WIFI_PASSWORD   = passwd
@@ -23,6 +40,15 @@ mqtt_client_id  = bytes('odo', 'utf-8')
 SPEED_FEED_ID   = "speed"
 
 led.on()
+
+
+
+displayBuffer = [0,[0,0],0,0]
+
+
+####################
+## PROGRAM STARTS ##
+####################
 
 
 def connect():
@@ -60,6 +86,68 @@ def cb(topic, msg):                             # Callback function
 
 def updateLcd():
     pass
+
+def secs():
+    return time.ticks_ms() / 1000
+    
+    
+def trunc(N, ndigits=0):
+    return math.trunc(N * 10 ** ndigits) / 10 ** ndigits
+
+
+###############
+## STOPWATCH ##
+###############
+        
+    
+class stopwatch:
+    def __init__(self):
+        self.start_time = 0.0
+        self.times = []
+        self.run = False
+    
+    def start(self):
+        if not self.run:
+            self.start_time = secs()
+            self.run = True
+        
+    def get_time(self):
+        tbr = 0
+        if self.run:
+            tbr = secs() - self.start_time
+        for times in self.times:
+            tbr += times
+        return tbr
+    
+    def get_secs(self):
+        tbr = float(trunc(self.get_time() % 60, 1))
+        if tbr >= 10:
+            return str(tbr)
+        else:
+            return "0" + str(tbr)
+    
+    def get_mins(self):
+        tbr = int(trunc(self.get_time() / 60) % 60)
+        return f"{tbr:02d}"
+    
+    def get_hrs(self):
+        return str(int(trunc(self.get_time() / 3600)))
+    
+    def reset(self):
+        self.start_time = secs()
+        self.run = True
+        self.times = []
+        
+    def stop(self):
+        if self.run:
+            self.times.append(secs() - self.start_time)
+            self.run = False
+            
+            
+###################
+## STOPWATCH END ##
+###################
+
 
 
 if __name__ == '__main__':
