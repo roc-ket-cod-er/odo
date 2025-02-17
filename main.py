@@ -37,14 +37,14 @@ ADAFRUIT_IO_URL = 'io.adafruit.com'
 mqtt_client_id  = bytes('odo', 'utf-8')
 
 #feeds
-SPEED_FEED_ID   = "speed"
+SPEED_FEED_ID     = "speed"
+AVG_SPEED_FEED_ID = "avg-speed"
+BATTERY_FEED_ID   = "battery-percent"
 
 led.on()
 
 
 lcd = display(20, 4)
-
-displayBuffer = [0,[0,0],0,0]
 
 
 ####################
@@ -70,14 +70,25 @@ def connect():
         print('not connected')
         sys.exit()
         
-
+battTally = 2
 def updateCloud(inputs):
-    global speed
+    global speed, battTally
     speed = (odo.getKmph())
     #publish feeds
     client.publish(speed_feed,    
-                  bytes(str(speed), 'utf-8'),   # Publishing Temprature to adafruit.io
+                  bytes(str(speed), 'utf-8'),   # Publishing speed to adafruit.io
                   qos=0)
+    
+    client.publish(avg_speed_feed,    
+                  bytes(str(odo.getAvgKmph()), 'utf-8'),   # Publishing AVERAGE SPEED to adafruit.io
+                  qos=0)
+    battTally += 1
+    if battTally == 3:
+        client.publish(battery_feed,    
+                      bytes(str(100), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
+                      qos=0)
+        battTally = 0
+    print(battTally)
     print("sent")
     updateLcd()
 
@@ -89,9 +100,9 @@ def cb(topic, msg):                             # Callback function
 def updateLcd():
     lcd.resetBuffer() #reset the lcd buffer
     lcd.putWithEnding(odo.getDistance(), ending="m")  #display the meters
-    #lcd.putWithEnding(str(time[0]) + ":" + str(time[1]), ending="s")  #display the time
+    lcd.putWithEnding(str(odo.time.get_mins()) + ":" + str(odo.time.get_secs()), ending="s")  #display the time
     lcd.putWithEnding(round(speed, 2), ending="km/h")  #display the speed
-    #lcd.putWithEnding(avg, prefix="avg:")  #display the average speed
+    lcd.putWithEnding(odo.getAvgKmph(), prefix="avg:")  #display the average speed
     lcd.putBuffer() #display the buffer
 
 def secs():
@@ -170,6 +181,8 @@ class odometer:
         self.speeds = [0]
         self.WHEEL = wheel
         self.distance = 0
+        self.time = stopwatch()
+        self.time.start()
     
     def hit(self):
         self.speed = self.WHEEL / self.stopwatch.get_time() + 1 * 10 ** -6
@@ -191,6 +204,12 @@ class odometer:
     
     def getDistance(self):
         return self.distance
+    
+    def getAvg(self):
+        return self.distance / self.time.get_time()
+    
+    def getAvgKmph(self):
+        return self.getAvg() * 3.6
         
             
 ##################
@@ -214,6 +233,8 @@ if __name__ == '__main__':
         sys.exit()
         
     speed_feed = bytes('{:s}/feeds/{:s}'.format(userid, SPEED_FEED_ID), 'utf-8')
+    avg_speed_feed = bytes('{:s}/feeds/{:s}'.format(userid, AVG_SPEED_FEED_ID), 'utf-8')
+    battery_feed = bytes('{:s}/feeds/{:s}'.format(userid, BATTERY_FEED_ID), 'utf-8')
     
     throttle   = bytes('{:s}/throttle'.format(userid), 'utf-8')
     
@@ -239,6 +260,6 @@ if __name__ == '__main__':
             print("hit", hit)
             odo.hit()
             while not sensor.value():
-                time.sleep_ms(30)
+                time.sleep_ms(50)
             
             
