@@ -11,9 +11,23 @@ import math
 import sys
 import dht
 import random
+import ina226_jcf
 
 
 lock = allocate_lock()
+
+
+i2c = I2C(1, sda=Pin(2), scl=Pin(3))
+if i2c.scan() == []:
+    print("INA226 NOT DETECTED")
+    sys.exit()
+else:
+    print("INA226 DETECTED")
+    
+ina226 = ina226_jcf.INA226(i2c, Rs=0.1)
+
+time.sleep_ms(100)
+
 
 sensor = Pin(18, Pin.IN, Pin.PULL_UP)
 run = Pin(19, Pin.IN, Pin.PULL_UP)
@@ -73,6 +87,10 @@ def connect():
 battTally = 2
 def updateCloud(inputs):
     global speed, battTally
+    
+    V, I, P = ina226.get_VIP()
+    print(V, I, P)
+    
     speed = (odo.getKmph())
     #publish feeds
     client.publish(speed_feed,    
@@ -84,11 +102,11 @@ def updateCloud(inputs):
                   qos=0)
     battTally += 1
     if battTally == 3:
-        client.publish(battery_feed,    
-                      bytes(str(100), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
+        client.publish(battery_feed,
+                      bytes(str(V/0.15), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
                       qos=0)
         battTally = 0
-    print(battTally)
+    print(battTally, V/0.15)
     print("sent")
     updateLcd()
 
