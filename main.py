@@ -16,13 +16,16 @@ import ina226_jcf
 
 lock = allocate_lock()
 
+lcd = display(20, 4)
 
 i2c = I2C(1, sda=Pin(2), scl=Pin(3))
 if i2c.scan() == []:
+    lcd.put("INA226 NOT DETECTED")
     print("INA226 NOT DETECTED")
     sys.exit()
 else:
     print("INA226 DETECTED")
+    lcd.put("LCD detected!")
     
 ina226 = ina226_jcf.INA226(i2c, Rs=0.1)
 
@@ -33,7 +36,7 @@ sensor = Pin(18, Pin.IN, Pin.PULL_UP)
 run = Pin(19, Pin.IN, Pin.PULL_UP)
 led = Pin("LED", Pin.OUT)
 
-if run.value():
+if not run.value():
     sys.exit()
 
 while not sensor.value():
@@ -58,8 +61,6 @@ BATTERY_FEED_ID   = "battery-percent"
 led.on()
 
 
-lcd = display(20, 4)
-
 
 ####################
 ## PROGRAM STARTS ##
@@ -67,6 +68,7 @@ lcd = display(20, 4)
 
 
 def connect():
+    connecting = "connecting"
     wifi = network.WLAN(network.STA_IF)
     wifi.active(True)
     wifi.disconnect()
@@ -77,38 +79,51 @@ def connect():
         while (not wifi.isconnected() and timeout < 10):
             print(10 - timeout)
             timeout = timeout + 1
-            time.sleep(1) 
+            time.sleep(0.5)
+            connecting += '.'
+            if connecting == 'connecting....':
+                connecting = 'connecting'
+            lcd.put(connecting)
+            
+            time.sleep(0.5)
+            connecting += '.'
+            if connecting == 'connecting....':
+                connecting = 'connecting'
+            lcd.put(connecting)
+            
     if(wifi.isconnected()):
         print('connected')
     else:
         print('not connected')
         sys.exit()
         
-battTally = 2
+battTally = 6
 def updateCloud(inputs):
     global speed, battTally
     
-    V, I, P = ina226.get_VIP()
-    print(V, I, P)
-    
-    speed = (odo.getKmph())
-    #publish feeds
-    client.publish(speed_feed,    
-                  bytes(str(speed), 'utf-8'),   # Publishing speed to adafruit.io
-                  qos=0)
-    
-    client.publish(avg_speed_feed,    
-                  bytes(str(odo.getAvgKmph()), 'utf-8'),   # Publishing AVERAGE SPEED to adafruit.io
-                  qos=0)
-    battTally += 1
-    if battTally == 3:
-        client.publish(battery_feed,
-                      bytes(str(V/0.15), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
+    if battTally % 2 == 0:
+        
+        V, I, P = ina226.get_VIP()
+        print(V, I, P)
+        
+        speed = (odo.getKmph())
+        #publish feeds
+        client.publish(speed_feed,    
+                      bytes(str(speed), 'utf-8'),   # Publishing speed to adafruit.io
                       qos=0)
-        battTally = 0
-    print(battTally, V/0.15)
-    print("sent")
+        
+        client.publish(avg_speed_feed,    
+                      bytes(str(odo.getAvgKmph()), 'utf-8'),   # Publishing AVERAGE SPEED to adafruit.io
+                      qos=0)
+        if battTally == 6:
+            client.publish(battery_feed,
+                          bytes(str(V/0.15), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
+                          qos=0)
+            battTally = 0
+        print(battTally, V/0.15)
+        print("sent")
     updateLcd()
+    battTally += 1
 
 
 def cb(topic, msg):                             # Callback function
@@ -131,7 +146,10 @@ def trunc(N, ndigits=0):
     return math.trunc(N * 10 ** ndigits) / 10 ** ndigits
 
 def avg(inp):
-    return sum(inp) / len(inp)
+    try:
+        return sum(inp) / len(inp)
+    except ZeroDivisionError:
+        return 0
 
 
 ###############
@@ -203,9 +221,9 @@ class odometer:
         self.time.start()
     
     def hit(self):
-        self.speed = self.WHEEL / self.stopwatch.get_time() + 1 * 10 ** -6
+        self.speed = self.WHEEL / self.stopwatch.get_time()
         self.stopwatch.reset()
-        self.speeds.append(self.speed)
+        self.speeds.append(round(self.speed,2))
         self.distance += self.WHEEL
         
     def getSpeed(self):
@@ -214,7 +232,7 @@ class odometer:
     def getAvgSpeed(self):
         ret = avg(self.speeds)
         print(self.speeds, ret)
-        self.speeds = [self.speeds[-1]]
+        self.speeds = []
         return ret
     
     def getKmph(self):
@@ -236,6 +254,7 @@ class odometer:
 
 
 if __name__ == '__main__':
+    lcd.put("connecting")
     connect()
     
     client = MQTTClient(client_id=mqtt_client_id, 
@@ -259,10 +278,11 @@ if __name__ == '__main__':
     client.set_callback(cb)      # Callback function               
     client.subscribe(throttle) # Subscribing to particular topic
     
-    publishSpeedTimer = Timer()
-    publishSpeedTimer.init(period=5000, mode=Timer.PERIODIC, callback = updateCloud)
+    odo = odometer(2.5)
     
-    odo = odometer(1)
+    publishSpeedTimer = Timer()
+    updateCloud("")
+    publishSpeedTimer.init(period=2500, mode=Timer.PERIODIC, callback = updateCloud)
         
     hit = 0
     
@@ -277,7 +297,10 @@ if __name__ == '__main__':
             hit += 1
             print("hit", hit)
             odo.hit()
+            time.sleep_ms(100)
             while not sensor.value():
-                time.sleep_ms(50)
+                time.sleep_ms(1)
+                
+        time.sleep_ms(1)
             
             
