@@ -25,7 +25,7 @@ if i2c.scan() == []:
     sys.exit()
 else:
     print("INA226 DETECTED")
-    lcd.put("LCD detected!")
+    lcd.put("INA & LCD detected!")
     
 ina226 = ina226_jcf.INA226(i2c, Rs=0.1)
 
@@ -213,14 +213,19 @@ class odometer:
     def __init__(self, wheel):
         self.stopwatch = stopwatch()
         self.stopwatch.start()
+        self.time = stopwatch()
+        self.time.start()
+        self.ministop = stopwatch()
+        self.ministop.start()
+        
         self.speed = 0
         self.speeds = [0]
         self.WHEEL = wheel
         self.distance = 0
-        self.time = stopwatch()
-        self.time.start()
+        self.hits = 0
     
     def hit(self):
+        self.hits += 1
         self.speed = self.WHEEL / self.stopwatch.get_time()
         self.stopwatch.reset()
         self.speeds.append(round(self.speed,2))
@@ -229,14 +234,17 @@ class odometer:
     def getSpeed(self):
         return(self.speed)
     
-    def getAvgSpeed(self):
+    def getMiniAvgSpeed(self):
         ret = avg(self.speeds)
         print(self.speeds, ret)
         self.speeds = []
-        return ret
+        tbr = self.hits * self.WHEEL / self.ministop.get_time()
+        self.ministop.reset()
+        self.hits = 0
+        return tbr
     
     def getKmph(self):
-        return(self.getAvgSpeed() * 3.6)
+        return(self.getMiniAvgSpeed() * 3.6)
     
     def getDistance(self):
         return self.distance
@@ -278,7 +286,7 @@ if __name__ == '__main__':
     client.set_callback(cb)      # Callback function               
     client.subscribe(throttle) # Subscribing to particular topic
     
-    odo = odometer(2.5)
+    odo = odometer(1)
     
     publishSpeedTimer = Timer()
     updateCloud("")
