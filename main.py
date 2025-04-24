@@ -13,6 +13,8 @@ import dht
 import random
 import ina226_jcf
 
+bat = 65.0
+
 
 lock = allocate_lock()
 
@@ -27,7 +29,7 @@ else:
     print("INA226 DETECTED")
     lcd.put("INA & LCD detected!")
     
-ina226 = ina226_jcf.INA226(i2c, Rs=0.1)
+ina226 = ina226_jcf.INA226(i2c, Rs=0.1)#0.00075)
 
 time.sleep_ms(100)
 
@@ -93,18 +95,24 @@ def connect():
             
     if(wifi.isconnected()):
         print('connected')
+        lcd.put("connected!")
     else:
         print('not connected')
+        lcd.put("ERROR: Unable to Connect to WIFI")
+        time.sleep(3)
+        lcd.put("Restarting")
         sys.exit()
         
 battTally = 6
+V, I, P = 0,0,0
 def updateCloud(inputs):
-    global speed, battTally
+    global speed, battTally, bat, V, I, P
     
     if battTally % 2 == 0:
         
         V, I, P = ina226.get_VIP()
-        print(V, I, P)
+        print("vip", V, I, P)
+        print(bat, bat/0.65)
         
         speed = (odo.getKmph())
         #publish feeds
@@ -115,14 +123,17 @@ def updateCloud(inputs):
         client.publish(avg_speed_feed,    
                       bytes(str(odo.getAvgKmph()), 'utf-8'),   # Publishing AVERAGE SPEED to adafruit.io
                       qos=0)
-        if battTally == 6:
+        if battTally == 10:
             client.publish(battery_feed,
-                          bytes(str(V/0.15), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
+                          bytes(str(round(bat/0.65, 1)), 'utf-8'),   # Publishing Battery Percentage to adafruit.io
                           qos=0)
+            print("Batt", bat/0.65)
             battTally = 0
-        print(battTally, V/0.15)
-        print("sent")
-    updateLcd()
+        bat -= I/720
+        print("B", battTally, V/0.15)
+        print("sent\n\n\n\n")
+        
+    updateLcd(V, I)
     battTally += 1
 
 
@@ -130,12 +141,19 @@ def cb(topic, msg):                             # Callback function
     print('Received Data:  Topic = {}, Msg = {}'.format(topic, msg))
     
 
-def updateLcd():
+def updateLcd(V="", I=""):
     lcd.resetBuffer() #reset the lcd buffer
     lcd.putWithEnding(odo.getDistance(), ending="m")  #display the meters
     lcd.putWithEnding(str(odo.time.get_mins()) + ":" + str(odo.time.get_secs()), ending="s")  #display the time
     lcd.putWithEnding(round(speed, 2), ending="km/h")  #display the speed
     lcd.putWithEnding(odo.getAvgKmph(), prefix="avg:")  #display the average speed
+    lcd.putWithEnding(round(bat/.65, 1), ending="%")
+    lcd.putWithEnding(round(65 - bat, 1), ending=" Ah")
+    if V != "":
+        lcd.putWithEnding(round(V,1), ending="V")
+        lcd.putWithEnding(round(I), ending="A")
+    else:
+        print("AAAAAAAAAAA", V)
     lcd.putBuffer() #display the buffer
 
 def secs():
